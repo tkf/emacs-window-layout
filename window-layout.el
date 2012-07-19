@@ -138,6 +138,15 @@
              (let ((it ,sym)) ,@(cdr cl1))
            (wlf:acond ,@(cdr clauses)))))))
 
+(defun wlf:window-first-line-point (window)
+  "[internal] return the point at the beginning of the first line
+of the WINDOW."
+  (when (windowp window)
+    (with-selected-window window
+      (save-excursion
+        (move-to-window-line 0)
+        (point)))))
+
 ;;; Window-set management structure
 ;; recipe      : an input recipe object.
 ;; winfo-list  : a list of window management structures.
@@ -329,11 +338,17 @@ start dividing."
   "[internal] Apply layout options to the current window."
   (if (not (wlf:window-shown-p winfo))
       (delete-window (selected-window))
-    (wlf:aif (wlf:window-option-get winfo :buffer)
-        (when (buffer-live-p (get-buffer it))
-          (set-window-buffer (selected-window) (get-buffer it))
-          (wlf:aif (wlf:window-option-get winfo :window-point)
-              (set-window-point (selected-window) it))))))
+    (let ((buffer (wlf:aif (wlf:window-option-get winfo :buffer)
+                      (get-buffer it))))
+      (when (buffer-live-p buffer)
+        (set-window-buffer (selected-window) buffer)
+        (wlf:aif (wlf:window-option-get winfo :window-point)
+            (set-window-point (selected-window) it))
+        (wlf:aif (wlf:window-option-get winfo :window-first-line-point)
+            (with-current-buffer buffer
+              (save-excursion
+                (goto-char it)
+                (recenter 0))))))))
 
 (defun wlf:collect-window-edges (winfo-list)
   "[internal] At the end of window laying out, this function is
@@ -464,7 +479,10 @@ The saved points are used in `wlf:apply-winfo'."
                              (wlf:max-window-size-p winfo)
                              (wlf:window-size winfo)))
                   (plist-put (wlf:window-options winfo)
-                             :window-point (and win (window-point win)))))))
+                             :window-point (and win (window-point win)))
+                  (plist-put (wlf:window-options winfo)
+                             :window-first-line-point
+                             (wlf:window-first-line-point win))))))
   (set-frame-parameter (selected-frame) 'wlf:recipe recipe))
 
 
@@ -619,6 +637,8 @@ name or object to show in the window."
       (error "Buffer is dead. at wlf:set-buffer. (%s)" winfo-name))
     (plist-put (wlf:window-options winfo) :buffer buf)
     (plist-put (wlf:window-options winfo) :window-point (window-point window))
+    (plist-put (wlf:window-options winfo)
+               :window-first-line-point (wlf:window-first-line-point window))
     (when (and window (not (eql (get-buffer buf) (window-buffer window))))
       (set-window-buffer window buf))
     (when selectp 
